@@ -303,7 +303,7 @@ function FilesPage() {
                         i === crumbs.length - 1 ? "font-semibold text-foreground" : "text-muted-foreground"
                       }`}
                     >
-                      {i === 0 ? "🏠 Inicio" : c.name}
+                      {i === 0 ? "Inicio" : c.name}
                     </button>
                   </span>
                 ))}
@@ -565,7 +565,7 @@ function FilesPage() {
                 <SelectValue placeholder="Selecciona carpeta…" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="root">🏠 Raíz (sin carpeta)</SelectItem>
+                <SelectItem value="root">Raíz (sin carpeta)</SelectItem>
                 {allDirs.map(d => (
                   <SelectItem key={d.directory_id} value={d.directory_id}>
                     📁 {d.directory_name}
