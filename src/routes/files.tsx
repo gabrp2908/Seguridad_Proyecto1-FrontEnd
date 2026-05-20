@@ -3,10 +3,16 @@ import { useState, useEffect, useRef, type FormEvent } from "react";
 import {
   CloudUpload, Download, File as FileIcon, FileText, Film, Folder,
   Globe, Image as ImageIcon, Link2, Lock, LogOut, Music, Pencil, Plus,
-  Search, Trash2, Upload, MoveRight, RefreshCw,
+  Search, Trash2, Upload, MoveRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -88,7 +94,6 @@ function FilesPage() {
   ]);
   const [dirs, setDirs] = useState<DirectoryDto[]>([]);
   const [files, setFiles] = useState<ArchiveDto[]>([]);
-  const [publicFiles, setPublicFiles] = useState<ArchiveDto[]>([]);
   const [allDirs, setAllDirs] = useState<DirectoryDto[]>([]);
 
   const [query, setQuery] = useState("");
@@ -136,13 +141,6 @@ function FilesPage() {
       setFiles(filesRes);
     } catch (_) {}
     finally { setLoading(false); }
-  }
-
-  async function loadPublicFiles() {
-    try {
-      const res = await fileApi.listPublic();
-      setPublicFiles(res.filter(f => f.user_id !== user?.user_id));
-    } catch (_) {}
   }
 
   async function loadAllDirs(parentId: string | null = null, prefix = "") {
@@ -277,7 +275,7 @@ function FilesPage() {
       </header>
 
       <main className="mx-auto max-w-6xl p-6 md:p-10">
-        <Tabs defaultValue="my-files" onValueChange={(v) => v === "public" && loadPublicFiles()}>
+        <Tabs defaultValue="my-files">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-semibold">Mis archivos</h1>
@@ -287,7 +285,6 @@ function FilesPage() {
             </div>
             <TabsList>
               <TabsTrigger value="my-files">Mis archivos</TabsTrigger>
-              <TabsTrigger value="public">Archivos públicos</TabsTrigger>
             </TabsList>
           </div>
 
@@ -422,10 +419,26 @@ function FilesPage() {
 
                         <span className="text-muted-foreground text-xs">Archivo</span>
 
-                        <div className="flex justify-end gap-1">
-                          <Button size="icon" variant="ghost" title="Descargar" onClick={() => downloadBlob(f.archive_id)}>
-                            <Download className="h-4 w-4" />
-                          </Button>
+                        <div className="flex justify-end gap-1 items-center">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="icon" variant="ghost" title="Acciones de archivo">
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => downloadBlob(f.archive_id)}>
+                                <Download className="h-4 w-4" />
+                                Descargar archivo
+                              </DropdownMenuItem>
+                              {f.is_public && f.share_token ? (
+                                <DropdownMenuItem onSelect={() => copySharedLink(f.share_token)}>
+                                  <Link2 className="h-4 w-4" />
+                                  Copiar enlace público
+                                </DropdownMenuItem>
+                              ) : null}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                           <Button size="icon" variant="ghost" title="Renombrar" onClick={() => openRenameFile(f)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -440,68 +453,6 @@ function FilesPage() {
                     );
                   })}
                 </>
-              )}
-            </section>
-          </TabsContent>
-
-          {/* ── Public Files Tab ── */}
-          <TabsContent value="public">
-            <div className="mb-4 flex justify-end">
-              <Button variant="outline" size="sm" onClick={loadPublicFiles}>
-                <RefreshCw className="mr-1 h-4 w-4" /> Actualizar
-              </Button>
-            </div>
-            <section className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
-              <div className="grid grid-cols-[1.5fr_1fr_auto] gap-4 border-b border-border px-5 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                <span>Nombre</span>
-                <span>Propietario</span>
-                <span className="text-right">Acciones</span>
-              </div>
-              {publicFiles.length === 0 ? (
-                <p className="p-8 text-center text-sm text-muted-foreground">No hay archivos públicos de otros usuarios.</p>
-              ) : (
-                publicFiles.map((f) => {
-                  const Icon = fileIcon(f.archive_na);
-                  return (
-                    <div
-                      key={f.archive_id}
-                      className="grid grid-cols-[1.5fr_1fr_auto] items-center gap-4 border-b border-border/60 px-5 py-3 text-sm transition-colors last:border-b-0 hover:bg-accent/10"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-primary">
-                          <Icon className="h-4 w-4" />
-                        </span>
-                        <div>
-                          <p className="truncate font-medium text-foreground">{f.archive_na}</p>
-                          <span className="inline-flex items-center gap-1 text-xs text-primary">
-                            <Globe className="h-3 w-3" /> Público
-                          </span>
-                        </div>
-                      </div>
-                      <span className="text-muted-foreground text-xs">Otro usuario</span>
-                      <div className="flex justify-end items-center gap-2">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          title={f.share_token ? "Descargar" : "Enlace no disponible"}
-                          onClick={() => f.share_token && downloadBlobShared(f.share_token)}
-                          disabled={!f.share_token}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          title={f.share_token ? "Copiar enlace" : "Enlace no disponible"}
-                          onClick={() => f.share_token && copySharedLink(f.share_token)}
-                          disabled={!f.share_token}
-                        >
-                          <Link2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })
               )}
             </section>
           </TabsContent>
