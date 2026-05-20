@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialog, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
@@ -167,10 +167,16 @@ function FilesPage() {
   }
   async function confirmFinal() {
     if (!pendingDelete) return;
-    if (pendingDelete.isDir) await dirApi.delete(pendingDelete.id);
-    else await fileApi.delete(pendingDelete.id);
-    await loadCurrentDir();
-    setPendingDelete(null);
+    try {
+      if (pendingDelete.isDir) await dirApi.delete(pendingDelete.id);
+      else await fileApi.delete(pendingDelete.id);
+      await loadCurrentDir();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Error al eliminar");
+    } finally {
+      setPendingDelete(null);
+      setConfirmStep(1);
+    }
   }
 
   // ── Upload ──────────────────────────────────────────────────────────────────
@@ -456,7 +462,12 @@ function FilesPage() {
       </main>
 
       {/* ── Delete Confirm Dialog ── */}
-      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => {
+          if (!open) {
+            setPendingDelete(null);
+            setConfirmStep(1);
+          }
+        }}>
         <AlertDialogContent>
           {confirmStep === 1 ? (
             <>
@@ -469,7 +480,9 @@ function FilesPage() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setPendingDelete(null)}>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={() => setConfirmStep(2)}>Sí, eliminar</AlertDialogAction>
+                <Button className="bg-brand-gradient text-primary-foreground" onClick={() => setConfirmStep(2)}>
+                  Sí, eliminar
+                </Button>
               </AlertDialogFooter>
             </>
           ) : confirmStep === 2 ? (
@@ -482,7 +495,9 @@ function FilesPage() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setPendingDelete(null)}>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={() => setConfirmStep(3)}>Sí, continuar</AlertDialogAction>
+                <Button className="bg-brand-gradient text-primary-foreground" onClick={() => setConfirmStep(3)}>
+                  Sí, continuar
+                </Button>
               </AlertDialogFooter>
             </>
           ) : (
@@ -496,7 +511,9 @@ function FilesPage() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setPendingDelete(null)}>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={confirmFinal}>Eliminar definitivamente</AlertDialogAction>
+                <Button className="bg-destructive text-primary-foreground" onClick={confirmFinal}>
+                  Eliminar definitivamente
+                </Button>
               </AlertDialogFooter>
             </>
           )}
