@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef, type FormEvent } from "react";
 import {
   CloudUpload, Download, File as FileIcon, FileText, Film, Folder,
-  Globe, Image as ImageIcon, Lock, LogOut, Music, Pencil, Plus,
+  Globe, Image as ImageIcon, Link2, Lock, LogOut, Music, Pencil, Plus,
   Search, Trash2, Upload, MoveRight, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import {
 import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from "@/components/ui/tabs";
-import { authApi, dirApi, fileApi, downloadBlob, ApiError } from "@/lib/api";
+import { authApi, dirApi, fileApi, downloadBlob, ApiError, API_BASE } from "@/lib/api";
 import type { ArchiveDto, DirectoryDto, UserDto } from "@/lib/api";
 
 export const Route = createFileRoute("/files")({
@@ -45,6 +45,38 @@ function fileIcon(name: string) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
+async function downloadBlobShared(token: string) {
+  if (!token) return;
+  const res = await fileApi.downloadShared(token);
+  if (!res.ok) throw new ApiError("Download failed", res.status);
+
+  const blob = await res.blob();
+  const disp = res.headers.get("Content-Disposition") ?? "";
+  let filename = "download";
+  const utf8Match = disp.match(/filename\*=UTF-8''([^;]+)/i);
+  const asciiMatch = disp.match(/filename="?([^";\n]+)"?/i);
+  if (utf8Match) filename = decodeURIComponent(utf8Match[1]);
+  else if (asciiMatch) filename = asciiMatch[1];
+
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), {
+    href: url,
+    download: filename,
+    style: "display:none",
+  });
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(url);
+  a.remove();
+}
+
+function copySharedLink(token: string) {
+  if (!token) return;
+  const shareUrl = `${API_BASE}/file/download/shared/${token}`;
+  void navigator.clipboard.writeText(shareUrl);
+  alert("Enlace público copiado al portapapeles.");
+}
+
 function FilesPage() {
   const navigate = useNavigate();
 
@@ -447,9 +479,24 @@ function FilesPage() {
                         </div>
                       </div>
                       <span className="text-muted-foreground text-xs">Otro usuario</span>
-                      <div className="flex justify-end">
-                        <Button size="icon" variant="ghost" title="Descargar" onClick={() => downloadBlob(f.archive_id)}>
+                      <div className="flex justify-end items-center gap-2">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          title={f.share_token ? "Descargar" : "Enlace no disponible"}
+                          onClick={() => f.share_token && downloadBlobShared(f.share_token)}
+                          disabled={!f.share_token}
+                        >
                           <Download className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          title={f.share_token ? "Copiar enlace" : "Enlace no disponible"}
+                          onClick={() => f.share_token && copySharedLink(f.share_token)}
+                          disabled={!f.share_token}
+                        >
+                          <Link2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>

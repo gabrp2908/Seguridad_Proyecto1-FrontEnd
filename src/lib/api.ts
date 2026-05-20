@@ -3,7 +3,9 @@
  * All requests include credentials (session cookie).
  */
 
-const BASE = "http://localhost:3000";
+export const API_BASE = "http://localhost:3000";
+
+const BASE = API_BASE;
 
 export class ApiError extends Error {
   constructor(
@@ -116,6 +118,7 @@ export interface ArchiveDto {
   is_public: boolean;
   user_id: string;
   directory_id: string | null;
+  share_token?: string | null;
 }
 
 export const fileApi = {
@@ -126,6 +129,9 @@ export const fileApi = {
   },
 
   listPublic: () => request<ArchiveDto[]>("/file/public"),
+
+  downloadShared: (token: string) =>
+    request<Response>(`/file/download/shared/${token}`),
 
   upload: (file: File, directoryId?: string | null) => {
     const form = new FormData();
