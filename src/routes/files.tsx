@@ -318,7 +318,7 @@ function FilesPage() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Buscar..."
-                  className="w-52 pl-9 bg-[var(--sidebar)] text-primary-foreground"
+                  className="w-52 pl-9 bg-[var(--sidebar)] white"
                 />
               </div>
               <Button variant="outline" size="sm" onClick={openNewFolder}>
