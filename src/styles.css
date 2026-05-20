@@ -72,7 +72,7 @@
 
 
   --gradient-brand: linear-gradient(135deg, #0dab76 0%, #139a43 45%, #0b5d1e 100%);
-  --gradient-surface: linear-gradient(180deg, #053b06 0%, #000000 100%);
+  --gradient-surface: linear-gradient(180deg, #010701 0%, #000000 100%);
   --shadow-brand: 0 20px 60px -20px rgba(13, 171, 118, 0.45);
   --shadow-card: 0 10px 30px -15px rgba(0, 0, 0, 0.6);
 }
