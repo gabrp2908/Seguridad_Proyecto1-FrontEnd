@@ -4,6 +4,7 @@ import { AuthLayout } from "@/components/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { authApi, ApiError } from "@/lib/api";
 
 export const Route = createFileRoute("/register")({
   head: () => ({
@@ -18,11 +19,35 @@ export const Route = createFileRoute("/register")({
 function RegisterPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    navigate({ to: "/files" });
+    setError("");
+    if (form.password !== form.confirm) {
+      setError("Las contraseñas no coinciden");
+      return;
+    }
+    setLoading(true);
+    try {
+      await authApi.register(form.name, form.email, form.password);
+      // Auto-login after register
+      const user = await authApi.login(form.email, form.password);
+      sessionStorage.setItem("user", JSON.stringify(user));
+      navigate({ to: "/files" });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Error al crear cuenta");
+    } finally {
+      setLoading(false);
+    }
   }
+
+  const field = (key: keyof typeof form) => ({
+    value: form[key],
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm({ ...form, [key]: e.target.value }),
+  });
 
   return (
     <AuthLayout
@@ -40,24 +65,33 @@ function RegisterPage() {
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="name">Nombre completo</Label>
-          <Input id="name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Input id="name" required placeholder="Tu nombre" {...field("name")} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="email">Correo electrónico</Label>
-          <Input id="email" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <Input id="email" type="email" required placeholder="tu@correo.com" {...field("email")} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="password">Contraseña</Label>
-            <Input id="password" type="password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <Input id="password" type="password" required placeholder="••••••••" {...field("password")} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="confirm">Confirmar</Label>
-            <Input id="confirm" type="password" required value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} />
+            <Input id="confirm" type="password" required placeholder="••••••••" {...field("confirm")} />
           </div>
         </div>
-        <Button type="submit" className="w-full bg-brand-gradient text-primary-foreground shadow-brand hover:opacity-95">
-          Crear cuenta
+        {error && (
+          <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <Button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-brand-gradient text-primary-foreground shadow-brand hover:opacity-95"
+        >
+          {loading ? "Creando cuenta…" : "Crear cuenta"}
         </Button>
       </form>
     </AuthLayout>

@@ -4,6 +4,7 @@ import { AuthLayout } from "@/components/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { authApi, ApiError } from "@/lib/api";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -19,10 +20,23 @@ function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    navigate({ to: "/files" });
+    setError("");
+    setLoading(true);
+    try {
+      const user = await authApi.login(email, password);
+      // Store user in sessionStorage so files page knows who's logged in
+      sessionStorage.setItem("user", JSON.stringify(user));
+      navigate({ to: "/files" });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Error al iniciar sesión");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -66,8 +80,17 @@ function LoginPage() {
             placeholder="••••••••"
           />
         </div>
-        <Button type="submit" className="w-full bg-brand-gradient text-primary-foreground shadow-brand hover:opacity-95">
-          Iniciar sesión
+        {error && (
+          <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <Button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-brand-gradient text-primary-foreground shadow-brand hover:opacity-95"
+        >
+          {loading ? "Iniciando sesión…" : "Iniciar sesión"}
         </Button>
       </form>
     </AuthLayout>
