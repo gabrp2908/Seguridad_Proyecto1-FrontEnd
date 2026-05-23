@@ -4,6 +4,7 @@ import { AuthLayout } from "@/components/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { authApi } from "@/lib/api";
 
 export const Route = createFileRoute("/forgot-password")({
   head: () => ({
@@ -18,10 +19,23 @@ export const Route = createFileRoute("/forgot-password")({
 function ForgotPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    setSent(true);
+    setLoading(true);
+    setError("");
+    
+    try {
+      // AQUÍ ESTABA EL FALLO: faltaba la llamada real a la API
+      await authApi.forgotPassword(email);
+      setSent(true);
+    } catch (err: any) {
+      setError("Hubo un error al procesar tu solicitud. Inténtalo de nuevo.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -44,12 +58,24 @@ function ForgotPage() {
         </div>
       ) : (
         <form onSubmit={onSubmit} className="space-y-4">
+          {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="space-y-2">
             <Label htmlFor="email">Correo electrónico</Label>
-            <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input 
+              id="email" 
+              type="email" 
+              required 
+              value={email} 
+              disabled={loading}
+              onChange={(e) => setEmail(e.target.value)} 
+            />
           </div>
-          <Button type="submit" className="w-full bg-brand-gradient text-primary-foreground shadow-brand hover:opacity-95">
-            Enviar enlace
+          <Button 
+            type="submit" 
+            className="w-full" 
+            disabled={loading}
+          >
+            {loading ? "Enviando..." : "Enviar enlace"}
           </Button>
         </form>
       )}
