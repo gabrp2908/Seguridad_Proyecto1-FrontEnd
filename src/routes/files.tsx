@@ -27,7 +27,7 @@ import {
 import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from "@/components/ui/tabs";
-import { authApi, dirApi, fileApi, downloadBlob, ApiError, API_BASE } from "@/lib/api";
+import { authApi, dirApi, fileApi, downloadBlob, downloadBlobShared, ApiError, API_BASE } from "@/lib/api";
 import type { ArchiveDto, DirectoryDto, UserDto } from "@/lib/api";
 
 export const Route = createFileRoute("/files")({
@@ -51,30 +51,6 @@ function fileIcon(name: string) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-async function downloadBlobShared(token: string) {
-  if (!token) return;
-  const res = await fileApi.downloadShared(token);
-  if (!res.ok) throw new ApiError("Download failed", res.status);
-
-  const blob = await res.blob();
-  const disp = res.headers.get("Content-Disposition") ?? "";
-  let filename = "download";
-  const utf8Match = disp.match(/filename\*=UTF-8''([^;]+)/i);
-  const asciiMatch = disp.match(/filename="?([^";\n]+)"?/i);
-  if (utf8Match) filename = decodeURIComponent(utf8Match[1]);
-  else if (asciiMatch) filename = asciiMatch[1];
-
-  const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement("a"), {
-    href: url,
-    download: filename,
-    style: "display:none",
-  });
-  document.body.appendChild(a);
-  a.click();
-  URL.revokeObjectURL(url);
-  a.remove();
-}
 
 function copySharedLink(token: string) {
   if (!token) return;
@@ -427,14 +403,17 @@ function FilesPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => downloadBlob(f.archive_id)}>
+                              <DropdownMenuItem onSelect={() => downloadBlob(f.archive_id.toString())
+                                .then(() => alert("Descarga iniciada"))
+                                .catch((error) => console.error("Error al descargar el archivo:", error))
+                              }>
                                 <Download className="h-4 w-4" />
                                 Descargar archivo
                               </DropdownMenuItem>
                               {f.is_public && f.share_token ? (
                                 <DropdownMenuItem onSelect={() => copySharedLink(f.share_token)}>
                                   <Link2 className="h-4 w-4" />
-                                  Copiar enlace público
+                                  Copiar enlace
                                 </DropdownMenuItem>
                               ) : null}
                             </DropdownMenuContent>
