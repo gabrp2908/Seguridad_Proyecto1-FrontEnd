@@ -130,10 +130,9 @@ export const fileApi = {
 
   listPublic: () => request<ArchiveDto[]>("/file/public"),
 
-  downloadShared: (token: string, clientPublicKey?: string) =>
-    request<Response>(`/file/download/shared/${token}`, {
-      headers: clientPublicKey ? { 'x-client-public-key': clientPublicKey } : undefined,
-    }),
+  downloadShared: async (token: string) => {
+    return await downloadBlobShared(token);
+  },
 
   upload: async (file: File, directoryId?: string | null) => {
     // Pasos 1 y 2: Solicitud de llave pública (El servidor genera un par nuevo)
@@ -166,9 +165,9 @@ export const fileApi = {
     const authTag = cipherTextWithTag.slice(-16);
 
     const symmetricPayload = {
-      key: Array.from(new Uint8Array(exportedAesKey)).map((b) => b.toString(16).padStart(2, "0")).join(""),
-      iv: Array.from(iv).map((b) => b.toString(16).padStart(2, "0")).join(""),
-      authTag: Array.from(authTag).map((b) => b.toString(16).padStart(2, "0")).join(""),
+      key: bytesToHex(exportedAesKey),
+      iv: bytesToHex(iv),
+      authTag: bytesToHex(authTag),
     };
 
     // Paso 6: Encriptar llave simétrica y hash con la llave pública del servidor
@@ -189,11 +188,6 @@ export const fileApi = {
 
     return request<ArchiveDto>("/file/upload", { method: "POST", body: form });
   },
-
-  download: (id: string, clientPublicKey?: string) =>
-    request<Response>(`/file/download/${id}`, {
-      headers: clientPublicKey ? { 'x-client-public-key': clientPublicKey } : undefined,
-    }),
 
   rename: (id: string, name: string) =>
     request<ArchiveDto>(`/file/${id}/rename`, {
@@ -246,11 +240,6 @@ async function encryptHeaderPayload(publicKey: CryptoKey, payload: string): Prom
 
 
 // ─── Download helper ──────────────────────────────────────────────────────────
-type SymmetricPayload = {
-  key: string;
-  iv: string;
-  authTag: string;
-};
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -268,6 +257,12 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+function bytesToHex(buffer: ArrayBuffer | Uint8Array): string {
+  return Array.from(new Uint8Array(buffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -291,37 +286,7 @@ function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
 
 async function sha256Hex(data: Uint8Array): Promise<string> {
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function generateClientKeyPair() {
-  const keyPair = await crypto.subtle.generateKey(
-    {
-      name: "RSA-OAEP",
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: "SHA-256",
-    },
-    true,
-    ["encrypt", "decrypt"],
-  );
-
-  const publicKeyBuffer = await crypto.subtle.exportKey("spki", keyPair.publicKey);
-  return {
-    privateKey: keyPair.privateKey,
-    publicKeyBase64: arrayBufferToBase64(publicKeyBuffer),
-  };
-}
-
-async function decryptHeaderPayload(privateKey: CryptoKey, encryptedBase64: string): Promise<string> {
-  const decrypted = await crypto.subtle.decrypt(
-    { name: "RSA-OAEP" },
-    privateKey,
-    base64ToArrayBuffer(encryptedBase64),
-  );
-  return new TextDecoder().decode(decrypted);
+  return bytesToHex(hashBuffer);
 }
 
 function getFilenameFromHeader(disposition: string | null): string {
@@ -346,95 +311,95 @@ function saveBlob(blob: Blob, filename: string) {
   a.remove();
 }
 
-async function decryptAndVerifyBlob(
-  encryptedBlob: Blob,
-  decryptedSymmetricPayload: string,
-  decryptedHash: string,
-): Promise<Blob> {
-  let symmetricPayload: SymmetricPayload;
+// ─── Nuevo Flujo de Descarga (Symmetric Re-Encryption) ───────────────────────
+
+async function secureDownload(initUrl: string, downloadUrl: string): Promise<void> {
   try {
-    symmetricPayload = JSON.parse(decryptedSymmetricPayload) as SymmetricPayload;
-  } catch {
-    throw new Error("No se pudo parsear la llave simétrica");
-  }
+    // 1 & 2. Solicitud GET /init para obtener la llave pública RSA del archivo
+    const initRes = await request<{ publicKey: string }>(initUrl);
+    const serverPublicKey = await importServerPublicKey(initRes.publicKey);
 
-  if (!symmetricPayload.key || !symmetricPayload.iv || !symmetricPayload.authTag) {
-    throw new Error("Payload simétrico incompleto");
-  }
+    // 3. Generar llave simétrica AES-256-GCM para uso temporal del cliente
+    const aesKey = await crypto.subtle.generateKey(
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"]
+    );
+    const exportedAesKey = await crypto.subtle.exportKey("raw", aesKey);
+    const fileIv = crypto.getRandomValues(new Uint8Array(16));
 
-  const encryptedBytes = new Uint8Array(await encryptedBlob.arrayBuffer());
-  const authTagBytes = hexToBytes(symmetricPayload.authTag);
-  const cipherTextWithTag = concatBytes(encryptedBytes, authTagBytes);
+    const symmetricPayload = {
+      key: bytesToHex(exportedAesKey),
+      iv: bytesToHex(fileIv),
+    };
 
-  const aesKey = await crypto.subtle.importKey(
-    "raw",
-    hexToBytes(symmetricPayload.key),
-    { name: "AES-GCM" },
-    false,
-    ["decrypt"],
-  );
+    // 4. Encriptar el payload AES del cliente usando la llave pública RSA del servidor
+    const encryptedClientSymmetricKey = await encryptHeaderPayload(
+      serverPublicKey,
+      JSON.stringify(symmetricPayload)
+    );
 
-  const decryptedBuffer = await crypto.subtle.decrypt(
-    {
-      name: "AES-GCM",
-      iv: hexToBytes(symmetricPayload.iv),
-      tagLength: 128,
-    },
-    aesKey,
-    cipherTextWithTag,
-  );
+    // 5. Solicitud POST de descarga con la llave simétrica encriptada
+    const res = await request<Response>(downloadUrl, {
+      method: "POST",
+      body: JSON.stringify({ encryptedClientSymmetricKey }),
+    });
 
-  const decryptedBytes = new Uint8Array(decryptedBuffer);
-  const calculatedHash = await sha256Hex(decryptedBytes);
-  if (calculatedHash !== decryptedHash.toLowerCase()) {
-    throw new Error("Integridad comprometida: hash no coincide");
-  }
+    // 6. Leer headers criptográficos
+    const fileAuthTagHex = res.headers.get("x-file-auth-tag");
+    const hashHeaderStr = res.headers.get("x-file-hash");
+    if (!fileAuthTagHex || !hashHeaderStr) {
+      throw new Error("Faltan headers criptográficos de descarga. Verifica el CORS en el backend.");
+    }
+    const hashHeader = JSON.parse(hashHeaderStr);
 
-  return new Blob([decryptedBytes], { type: "application/octet-stream" });
-}
+    // 7. Extraer el archivo binario (ya re-encriptado con la llave del cliente)
+    const encryptedBlob = await res.blob();
+    const encryptedFileBytes = new Uint8Array(await encryptedBlob.arrayBuffer());
+    
+    // WebCrypto exige concatenar Ciphertext y AuthTag para descifrar AES-GCM
+    const fileAuthTagBytes = hexToBytes(fileAuthTagHex);
+    const cipherTextWithTag = concatBytes(encryptedFileBytes, fileAuthTagBytes);
 
-async function secureDownload(
-  requester: (clientPublicKey: string) => Promise<Response>,
-): Promise<void> {
-  try {
-    const { privateKey, publicKeyBase64 } = await generateClientKeyPair();
-    const res = await requester(publicKeyBase64);
+    // 8. Descifrar archivo
+    const decryptedFileBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: fileIv },
+      aesKey,
+      cipherTextWithTag
+    );
+    const decryptedFileBytes = new Uint8Array(decryptedFileBuffer);
 
-    const encryptedSymmetricKey = res.headers.get("x-crypto-symmetric-key");
-    const encryptedHash = res.headers.get("x-file-hash");
-    if (!encryptedSymmetricKey || !encryptedHash) {
-      throw new Error("Faltan headers criptográficos de descarga");
+    // 9. Descifrar hash
+    const hashCipherBytes = new Uint8Array(base64ToArrayBuffer(hashHeader.ciphertext));
+    const hashAuthTagBytes = hexToBytes(hashHeader.authTag);
+    const hashCipherWithTag = concatBytes(hashCipherBytes, hashAuthTagBytes);
+
+    const decryptedHashBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: hexToBytes(hashHeader.iv) },
+      aesKey,
+      hashCipherWithTag
+    );
+    const decryptedHashStr = new TextDecoder().decode(decryptedHashBuffer);
+
+    // 10. Rehash del archivo desencriptado y comparación de integridad
+    const calculatedHash = await sha256Hex(decryptedFileBytes);
+    if (calculatedHash !== decryptedHashStr.toLowerCase()) {
+      throw new Error("Integridad comprometida: el hash del archivo no coincide.");
     }
 
-    const [encryptedBlob, decryptedSymmetricPayload, decryptedHash] = await Promise.all([
-      res.blob(),
-      decryptHeaderPayload(privateKey, encryptedSymmetricKey),
-      decryptHeaderPayload(privateKey, encryptedHash),
-    ]);
-
-    const decryptedBlob = await decryptAndVerifyBlob(
-      encryptedBlob,
-      decryptedSymmetricPayload,
-      decryptedHash,
-    );
-
+    // 11. Finalizar la descarga en el navegador
     const filename = getFilenameFromHeader(res.headers.get("Content-Disposition"));
-    saveBlob(decryptedBlob, filename);
+    saveBlob(new Blob([decryptedFileBytes], { type: "application/octet-stream" }), filename);
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new ApiError(
-      error instanceof Error ? error.message : "Secure download failed",
-      500,
-    );
+    throw new ApiError(error instanceof Error ? error.message : "Fallo en la descarga segura", 500);
   }
 }
 
 export async function downloadBlob(id: string) {
-  await secureDownload((clientPublicKey) => fileApi.download(id, clientPublicKey));
+  await secureDownload(`/file/download/${id}/init`, `/file/download/${id}`);
 }
 
 export async function downloadBlobShared(token: string) {
-  await secureDownload((clientPublicKey) =>
-    fileApi.downloadShared(token, clientPublicKey),
-  );
+  await secureDownload(`/file/download/shared/${token}/init`, `/file/download/shared/${token}`);
 }
